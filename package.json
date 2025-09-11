@@ -1,0 +1,38 @@
+{
+  "name": "docker-mcp-server",
+  "version": "1.0.0",
+  "description": "Model Context Protocol server for Docker operations with natural language command processing",
+  "type": "module",
+  "main": "build/index.js",
+  "bin": {
+    "docker-mcp-server": "./build/index.js"
+  },
+  "scripts": {
+    "build": "tsc && chmod +x build/index.js",
+    "start": "node build/index.js",
+    "dev": "tsc && node build/index.js",
+    "test": "node test.mjs",
+    "watch": "tsc --watch"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "docker",
+    "ai",
+    "llm",
+    "natural-language"
+  ],
+  "author": "MCP Docker Server",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.13",
+    "typescript": "^5.0.0"
+  },
+  "files": [
+    "build"
+  ]
+}

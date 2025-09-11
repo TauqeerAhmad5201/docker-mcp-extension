@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "docker": {
+      "command": "node",
+      "args": ["/Users/tauqeerahmad/Documents/docker-vscode-extension/build/index.js"],
+      "env": {}
+    }
+  }
+}
