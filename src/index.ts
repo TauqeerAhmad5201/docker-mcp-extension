@@ -24,102 +24,336 @@ async function executeDockerCommand(command: string): Promise<{ stdout: string; 
   }
 }
 
-// Helper function to parse natural language and convert to Docker commands
+// Advanced natural language parsing with extensive Docker feature coverage
 function parseDockerCommand(naturalLanguage: string): string {
   const input = naturalLanguage.toLowerCase().trim();
   
-  // Container operations
-  if (input.includes("list") && input.includes("container")) {
+  // === CONTAINER OPERATIONS ===
+  
+  // List containers with various formats
+  if (input.match(/(list|show|display|get)\s+(all\s+)?(containers?|running|stopped)/)) {
+    if (input.includes("all") || input.includes("stopped")) {
+      return "docker ps -a";
+    }
+    if (input.includes("running")) {
+      return "docker ps";
+    }
     return "docker ps -a";
   }
   
-  if (input.includes("list") && input.includes("running")) {
+  if (input.match(/(what|which)\s+containers?\s+are\s+(running|active)/)) {
     return "docker ps";
   }
   
-  if (input.includes("stop") && input.includes("container")) {
-    const containerMatch = input.match(/container\s+(\w+)/);
-    if (containerMatch) {
-      return `docker stop ${containerMatch[1]}`;
+  // Container lifecycle operations
+  if (input.match(/(start|run|launch)\s+(container\s+)?([a-zA-Z0-9_-]+)/)) {
+    const match = input.match(/(start|run|launch)\s+(?:container\s+)?([a-zA-Z0-9_-]+)/);
+    if (match) {
+      return `docker start ${match[2]}`;
     }
-    return "echo 'Please specify container name or ID'";
   }
   
-  if (input.includes("start") && input.includes("container")) {
-    const containerMatch = input.match(/container\s+(\w+)/);
-    if (containerMatch) {
-      return `docker start ${containerMatch[1]}`;
+  if (input.match(/(stop|halt|kill)\s+(container\s+)?([a-zA-Z0-9_-]+)/)) {
+    const match = input.match(/(stop|halt|kill)\s+(?:container\s+)?([a-zA-Z0-9_-]+)/);
+    if (match) {
+      const action = match[1] === "kill" ? "kill" : "stop";
+      return `docker ${action} ${match[3]}`;
     }
-    return "echo 'Please specify container name or ID'";
   }
   
-  if (input.includes("remove") && input.includes("container")) {
-    const containerMatch = input.match(/container\s+(\w+)/);
-    if (containerMatch) {
-      return `docker rm ${containerMatch[1]}`;
+  if (input.match(/(restart|reboot)\s+(container\s+)?([a-zA-Z0-9_-]+)/)) {
+    const match = input.match(/(restart|reboot)\s+(?:container\s+)?([a-zA-Z0-9_-]+)/);
+    if (match) {
+      return `docker restart ${match[3]}`;
     }
-    return "echo 'Please specify container name or ID'";
   }
   
-  // Image operations
-  if (input.includes("list") && input.includes("image")) {
+  if (input.match(/(remove|delete|rm)\s+(container\s+)?([a-zA-Z0-9_-]+)/)) {
+    const match = input.match(/(remove|delete|rm)\s+(?:container\s+)?([a-zA-Z0-9_-]+)/);
+    if (match) {
+      return `docker rm ${match[3]}`;
+    }
+  }
+  
+  // Container inspection and logs
+  if (input.match(/(inspect|examine|details?)\s+(container\s+)?([a-zA-Z0-9_-]+)/)) {
+    const match = input.match(/(inspect|examine|details?)\s+(?:container\s+)?([a-zA-Z0-9_-]+)/);
+    if (match) {
+      return `docker inspect ${match[3]}`;
+    }
+  }
+  
+  if (input.match(/(logs?|output)\s+(from\s+)?(container\s+)?([a-zA-Z0-9_-]+)/)) {
+    const match = input.match(/(logs?|output)\s+(?:from\s+)?(?:container\s+)?([a-zA-Z0-9_-]+)/);
+    if (match) {
+      const follow = input.includes("follow") || input.includes("tail") ? " -f" : "";
+      const lines = input.match(/(\d+)\s+lines?/) ? ` --tail ${input.match(/(\d+)\s+lines?/)![1]}` : "";
+      return `docker logs${follow}${lines} ${match[2]}`;
+    }
+  }
+  
+  if (input.match(/(exec|execute|run)\s+(in|into)\s+(container\s+)?([a-zA-Z0-9_-]+)/)) {
+    const match = input.match(/(exec|execute|run)\s+(?:in|into)\s+(?:container\s+)?([a-zA-Z0-9_-]+)/);
+    if (match) {
+      const command = input.includes("bash") ? "bash" : input.includes("sh") ? "sh" : "bash";
+      return `docker exec -it ${match[2]} ${command}`;
+    }
+  }
+  
+  // === IMAGE OPERATIONS ===
+  
+  // List images
+  if (input.match(/(list|show|display|get)\s+(all\s+)?(images?|repos?|repositories)/)) {
+    if (input.includes("dangling")) {
+      return "docker images -f dangling=true";
+    }
     return "docker images";
   }
   
-  if (input.includes("pull") && input.includes("image")) {
-    const imageMatch = input.match(/image\s+([^\s]+)/);
-    if (imageMatch) {
-      return `docker pull ${imageMatch[1]}`;
+  // Pull images
+  if (input.match(/(pull|download|fetch)\s+(image\s+)?([a-zA-Z0-9/_.-]+)(:([a-zA-Z0-9._-]+))?/)) {
+    const match = input.match(/(pull|download|fetch)\s+(?:image\s+)?([a-zA-Z0-9/_.-]+)(?::([a-zA-Z0-9._-]+))?/);
+    if (match) {
+      const image = match[2];
+      const tag = match[3] || (input.includes("latest") ? "latest" : "");
+      return `docker pull ${image}${tag ? `:${tag}` : ""}`;
     }
-    return "echo 'Please specify image name'";
   }
   
-  if (input.includes("remove") && input.includes("image")) {
-    const imageMatch = input.match(/image\s+([^\s]+)/);
-    if (imageMatch) {
-      return `docker rmi ${imageMatch[1]}`;
+  // Push images
+  if (input.match(/(push|upload)\s+(image\s+)?([a-zA-Z0-9/_.-]+)(:([a-zA-Z0-9._-]+))?/)) {
+    const match = input.match(/(push|upload)\s+(?:image\s+)?([a-zA-Z0-9/_.-]+)(?::([a-zA-Z0-9._-]+))?/);
+    if (match) {
+      const image = match[2];
+      const tag = match[3] || "";
+      return `docker push ${image}${tag ? `:${tag}` : ""}`;
     }
-    return "echo 'Please specify image name or ID'";
   }
   
-  // Network operations
-  if (input.includes("list") && input.includes("network")) {
-    return "docker network ls";
+  // Build images
+  if (input.match(/(build|create)\s+(image\s+)?([a-zA-Z0-9/_.-]+)/)) {
+    const match = input.match(/(build|create)\s+(?:image\s+)?([a-zA-Z0-9/_.-]+)/);
+    if (match) {
+      const dockerfile = input.includes("dockerfile") ? ` -f ${input.match(/dockerfile[:\s]+([^\s]+)/)?.[1] || "Dockerfile"}` : "";
+      const context = input.match(/(?:from|in)\s+([^\s]+)/) ? ` ${input.match(/(?:from|in)\s+([^\s]+)/)![1]}` : " .";
+      return `docker build${dockerfile} -t ${match[3]}${context}`;
+    }
   }
   
-  // Volume operations
-  if (input.includes("list") && input.includes("volume")) {
+  // Remove images
+  if (input.match(/(remove|delete|rm)\s+(image\s+)?([a-zA-Z0-9/_.-]+)/)) {
+    const match = input.match(/(remove|delete|rm)\s+(?:image\s+)?([a-zA-Z0-9/_.-]+)/);
+    if (match) {
+      const force = input.includes("force") ? " -f" : "";
+      return `docker rmi${force} ${match[3]}`;
+    }
+  }
+  
+  // Tag images
+  if (input.match(/(tag|label)\s+(image\s+)?([a-zA-Z0-9/_.-]+)\s+(as\s+)?([a-zA-Z0-9/_.-]+)/)) {
+    const match = input.match(/(tag|label)\s+(?:image\s+)?([a-zA-Z0-9/_.-]+)\s+(?:as\s+)?([a-zA-Z0-9/_.-]+)/);
+    if (match) {
+      return `docker tag ${match[2]} ${match[3]}`;
+    }
+  }
+  
+  // === VOLUME OPERATIONS ===
+  
+  if (input.match(/(list|show|display)\s+(all\s+)?(volumes?|storage)/)) {
+    if (input.includes("dangling")) {
+      return "docker volume ls -f dangling=true";
+    }
     return "docker volume ls";
   }
   
-  // System operations
-  if (input.includes("system") && input.includes("info")) {
+  if (input.match(/(create|make)\s+(volume\s+)?([a-zA-Z0-9_-]+)/)) {
+    const match = input.match(/(create|make)\s+(?:volume\s+)?([a-zA-Z0-9_-]+)/);
+    if (match) {
+      return `docker volume create ${match[2]}`;
+    }
+  }
+  
+  if (input.match(/(remove|delete)\s+(volume\s+)?([a-zA-Z0-9_-]+)/)) {
+    const match = input.match(/(remove|delete)\s+(?:volume\s+)?([a-zA-Z0-9_-]+)/);
+    if (match) {
+      return `docker volume rm ${match[3]}`;
+    }
+  }
+  
+  if (input.match(/(inspect|examine)\s+(volume\s+)?([a-zA-Z0-9_-]+)/)) {
+    const match = input.match(/(inspect|examine)\s+(?:volume\s+)?([a-zA-Z0-9_-]+)/);
+    if (match) {
+      return `docker volume inspect ${match[3]}`;
+    }
+  }
+  
+  // === NETWORK OPERATIONS ===
+  
+  if (input.match(/(list|show|display)\s+(all\s+)?(networks?|networking)/)) {
+    return "docker network ls";
+  }
+  
+  if (input.match(/(create|make)\s+(network\s+)?([a-zA-Z0-9_-]+)/)) {
+    const match = input.match(/(create|make)\s+(?:network\s+)?([a-zA-Z0-9_-]+)/);
+    if (match) {
+      const driver = input.includes("bridge") ? " --driver bridge" : input.includes("overlay") ? " --driver overlay" : "";
+      return `docker network create${driver} ${match[2]}`;
+    }
+  }
+  
+  if (input.match(/(remove|delete)\s+(network\s+)?([a-zA-Z0-9_-]+)/)) {
+    const match = input.match(/(remove|delete)\s+(?:network\s+)?([a-zA-Z0-9_-]+)/);
+    if (match) {
+      return `docker network rm ${match[3]}`;
+    }
+  }
+  
+  if (input.match(/(connect|attach)\s+([a-zA-Z0-9_-]+)\s+(to\s+)?([a-zA-Z0-9_-]+)/)) {
+    const match = input.match(/(connect|attach)\s+([a-zA-Z0-9_-]+)\s+(?:to\s+)?([a-zA-Z0-9_-]+)/);
+    if (match) {
+      return `docker network connect ${match[3]} ${match[2]}`;
+    }
+  }
+  
+  if (input.match(/(disconnect|detach)\s+([a-zA-Z0-9_-]+)\s+(from\s+)?([a-zA-Z0-9_-]+)/)) {
+    const match = input.match(/(disconnect|detach)\s+([a-zA-Z0-9_-]+)\s+(?:from\s+)?([a-zA-Z0-9_-]+)/);
+    if (match) {
+      return `docker network disconnect ${match[4]} ${match[2]}`;
+    }
+  }
+  
+  // === SYSTEM OPERATIONS ===
+  
+  if (input.match(/(system\s+)?(info|information|details)/)) {
     return "docker system info";
   }
   
-  if (input.includes("system") && input.includes("prune")) {
+  if (input.match(/(version|ver)/)) {
+    return "docker --version && docker-compose --version";
+  }
+  
+  if (input.match(/(stats|statistics|status|monitor)/)) {
+    const noStream = !input.includes("follow") && !input.includes("continuous");
+    return `docker stats${noStream ? " --no-stream" : ""}`;
+  }
+  
+  if (input.match(/(disk\s+usage|space|storage\s+usage)/)) {
+    const verbose = input.includes("verbose") || input.includes("detailed") ? " -v" : "";
+    return `docker system df${verbose}`;
+  }
+  
+  if (input.match(/(clean\s*up?|prune|cleanup)/)) {
+    if (input.includes("all") || input.includes("everything")) {
+      return "docker system prune -a -f";
+    }
+    if (input.includes("volumes")) {
+      return "docker system prune --volumes -f";
+    }
     return "docker system prune -f";
   }
   
-  // Docker Compose operations
-  if (input.includes("compose") && input.includes("up")) {
-    return "docker-compose up -d";
+  // === DOCKER COMPOSE OPERATIONS ===
+  
+  if (input.match(/(compose\s+)?(up|start|launch)/)) {
+    const detached = !input.includes("foreground") && !input.includes("attached");
+    const build = input.includes("build") || input.includes("rebuild");
+    const service = input.match(/service\s+([a-zA-Z0-9_-]+)/) ? ` ${input.match(/service\s+([a-zA-Z0-9_-]+)/)![1]}` : "";
+    return `docker-compose up${detached ? " -d" : ""}${build ? " --build" : ""}${service}`;
   }
   
-  if (input.includes("compose") && input.includes("down")) {
-    return "docker-compose down";
+  if (input.match(/(compose\s+)?(down|stop|halt)/)) {
+    const volumes = input.includes("volumes") || input.includes("data") ? " --volumes" : "";
+    const images = input.includes("images") ? " --rmi all" : "";
+    return `docker-compose down${volumes}${images}`;
   }
   
-  if (input.includes("compose") && input.includes("logs")) {
-    return "docker-compose logs";
+  if (input.match(/(compose\s+)?(logs|output)/)) {
+    const follow = input.includes("follow") || input.includes("tail") ? " -f" : "";
+    const service = input.match(/(?:from\s+|service\s+)([a-zA-Z0-9_-]+)/) ? ` ${input.match(/(?:from\s+|service\s+)([a-zA-Z0-9_-]+)/)![1]}` : "";
+    return `docker-compose logs${follow}${service}`;
   }
   
-  // General commands
-  if (input.includes("version")) {
-    return "docker --version";
+  if (input.match(/(compose\s+)?(ps|status|services)/)) {
+    return "docker-compose ps";
   }
   
-  // If no pattern matches, return the original input as a docker command
+  if (input.match(/(compose\s+)?(restart|reboot)/)) {
+    const service = input.match(/service\s+([a-zA-Z0-9_-]+)/) ? ` ${input.match(/service\s+([a-zA-Z0-9_-]+)/)![1]}` : "";
+    return `docker-compose restart${service}`;
+  }
+  
+  if (input.match(/(compose\s+)?(build|rebuild)/)) {
+    const service = input.match(/service\s+([a-zA-Z0-9_-]+)/) ? ` ${input.match(/service\s+([a-zA-Z0-9_-]+)/)![1]}` : "";
+    const noCache = input.includes("fresh") || input.includes("clean") ? " --no-cache" : "";
+    return `docker-compose build${noCache}${service}`;
+  }
+  
+  // === ADVANCED OPERATIONS ===
+  
+  // Search Docker Hub
+  if (input.match(/(search|find)\s+(for\s+)?([a-zA-Z0-9/_.-]+)/)) {
+    const match = input.match(/(search|find)\s+(?:for\s+)?([a-zA-Z0-9/_.-]+)/);
+    if (match) {
+      return `docker search ${match[2]}`;
+    }
+  }
+  
+  // Copy files
+  if (input.match(/(copy|cp)\s+([^\s]+)\s+(from|to)\s+([a-zA-Z0-9_-]+)/)) {
+    const match = input.match(/(copy|cp)\s+([^\s]+)\s+(from|to)\s+([a-zA-Z0-9_-]+)/);
+    if (match) {
+      const [, , path, direction, container] = match;
+      if (direction === "from") {
+        return `docker cp ${container}:${path} .`;
+      } else {
+        return `docker cp ${path} ${container}:/tmp/`;
+      }
+    }
+  }
+  
+  // Port mapping info
+  if (input.match(/(port|ports)\s+(of\s+|for\s+)?([a-zA-Z0-9_-]+)/)) {
+    const match = input.match(/(port|ports)\s+(?:of\s+|for\s+)?([a-zA-Z0-9_-]+)/);
+    if (match) {
+      return `docker port ${match[2]}`;
+    }
+  }
+  
+  // Process list in container
+  if (input.match(/(processes?|ps|top)\s+(in|inside)\s+([a-zA-Z0-9_-]+)/)) {
+    const match = input.match(/(processes?|ps|top)\s+(?:in|inside)\s+([a-zA-Z0-9_-]+)/);
+    if (match) {
+      return `docker top ${match[3]}`;
+    }
+  }
+  
+  // === REGISTRY OPERATIONS ===
+  
+  if (input.match(/login\s+(to\s+)?([a-zA-Z0-9._-]+)?/)) {
+    const match = input.match(/login\s+(?:to\s+)?([a-zA-Z0-9._-]+)?/);
+    const registry = match?.[1] || "";
+    return `docker login${registry ? ` ${registry}` : ""}`;
+  }
+  
+  if (input.match(/logout\s+(from\s+)?([a-zA-Z0-9._-]+)?/)) {
+    const match = input.match(/logout\s+(?:from\s+)?([a-zA-Z0-9._-]+)?/);
+    const registry = match?.[1] || "";
+    return `docker logout${registry ? ` ${registry}` : ""}`;
+  }
+  
+  // === FALLBACK ===
+  
+  // If no pattern matches but it starts with docker, pass through
+  if (input.startsWith("docker")) {
+    return input;
+  }
+  
+  // General help
+  if (input.match(/(help|usage|commands)/)) {
+    return "docker --help";
+  }
+  
+  // Default to treating as direct docker command
   return `docker ${input}`;
 }
 
@@ -339,6 +573,383 @@ server.registerTool(
   }
 );
 
+// Register Docker volume management tool
+server.registerTool(
+  "manage_volumes",
+  {
+    title: "Docker Volume Management",
+    description: "Manage Docker volumes (list, create, remove, inspect)",
+    inputSchema: {
+      action: z.enum(["list", "create", "remove", "inspect", "prune"]).describe("Action to perform on volumes"),
+      volume: z.string().optional().describe("Volume name (required for create, remove, inspect)"),
+      driver: z.string().optional().describe("Volume driver (optional for create)")
+    }
+  },
+  async ({ action, volume, driver }) => {
+    try {
+      let command: string;
+      
+      switch (action) {
+        case "list":
+          command = "docker volume ls";
+          break;
+        case "create":
+          if (!volume) throw new Error("Volume name is required for create action");
+          command = `docker volume create${driver ? ` --driver ${driver}` : ""} ${volume}`;
+          break;
+        case "remove":
+          if (!volume) throw new Error("Volume name is required for remove action");
+          command = `docker volume rm ${volume}`;
+          break;
+        case "inspect":
+          if (!volume) throw new Error("Volume name is required for inspect action");
+          command = `docker volume inspect ${volume}`;
+          break;
+        case "prune":
+          command = "docker volume prune -f";
+          break;
+      }
+      
+      const result = await executeDockerCommand(command);
+      
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Volume ${action} completed:\n\n${result.stdout}${result.stderr ? `\nWarnings:\n${result.stderr}` : ""}`
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error managing volumes: ${error instanceof Error ? error.message : String(error)}`
+          }
+        ],
+        isError: true
+      };
+    }
+  }
+);
+
+// Register Docker network management tool
+server.registerTool(
+  "manage_networks",
+  {
+    title: "Docker Network Management",
+    description: "Manage Docker networks (list, create, remove, inspect, connect, disconnect)",
+    inputSchema: {
+      action: z.enum(["list", "create", "remove", "inspect", "connect", "disconnect", "prune"]).describe("Action to perform on networks"),
+      network: z.string().optional().describe("Network name (required for create, remove, inspect, connect, disconnect)"),
+      container: z.string().optional().describe("Container name (required for connect, disconnect)"),
+      driver: z.string().optional().describe("Network driver (bridge, overlay, host, none)")
+    }
+  },
+  async ({ action, network, container, driver }) => {
+    try {
+      let command: string;
+      
+      switch (action) {
+        case "list":
+          command = "docker network ls";
+          break;
+        case "create":
+          if (!network) throw new Error("Network name is required for create action");
+          command = `docker network create${driver ? ` --driver ${driver}` : ""} ${network}`;
+          break;
+        case "remove":
+          if (!network) throw new Error("Network name is required for remove action");
+          command = `docker network rm ${network}`;
+          break;
+        case "inspect":
+          if (!network) throw new Error("Network name is required for inspect action");
+          command = `docker network inspect ${network}`;
+          break;
+        case "connect":
+          if (!network || !container) throw new Error("Network and container names are required for connect action");
+          command = `docker network connect ${network} ${container}`;
+          break;
+        case "disconnect":
+          if (!network || !container) throw new Error("Network and container names are required for disconnect action");
+          command = `docker network disconnect ${network} ${container}`;
+          break;
+        case "prune":
+          command = "docker network prune -f";
+          break;
+      }
+      
+      const result = await executeDockerCommand(command);
+      
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Network ${action} completed:\n\n${result.stdout}${result.stderr ? `\nWarnings:\n${result.stderr}` : ""}`
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error managing networks: ${error instanceof Error ? error.message : String(error)}`
+          }
+        ],
+        isError: true
+      };
+    }
+  }
+);
+
+// Register Docker container creation and management tool
+server.registerTool(
+  "create_container",
+  {
+    title: "Create and Run Docker Containers",
+    description: "Create and run Docker containers with advanced options",
+    inputSchema: {
+      image: z.string().describe("Docker image to run"),
+      name: z.string().optional().describe("Container name"),
+      ports: z.array(z.string()).optional().describe("Port mappings (e.g., ['8080:80', '3000:3000'])"),
+      volumes: z.array(z.string()).optional().describe("Volume mounts (e.g., ['/host/path:/container/path'])"),
+      environment: z.record(z.string()).optional().describe("Environment variables"),
+      network: z.string().optional().describe("Network to connect to"),
+      detached: z.boolean().optional().default(true).describe("Run in detached mode"),
+      interactive: z.boolean().optional().default(false).describe("Run in interactive mode"),
+      command: z.string().optional().describe("Command to run in container"),
+      workdir: z.string().optional().describe("Working directory"),
+      restart: z.enum(["no", "on-failure", "always", "unless-stopped"]).optional().describe("Restart policy")
+    }
+  },
+  async ({ image, name, ports, volumes, environment, network, detached, interactive, command, workdir, restart }) => {
+    try {
+      let dockerCommand = "docker run";
+      
+      // Add flags
+      if (detached && !interactive) dockerCommand += " -d";
+      if (interactive) dockerCommand += " -it";
+      if (name) dockerCommand += ` --name ${name}`;
+      
+      // Add port mappings
+      if (ports && ports.length > 0) {
+        ports.forEach(port => {
+          dockerCommand += ` -p ${port}`;
+        });
+      }
+      
+      // Add volume mounts
+      if (volumes && volumes.length > 0) {
+        volumes.forEach(volume => {
+          dockerCommand += ` -v ${volume}`;
+        });
+      }
+      
+      // Add environment variables
+      if (environment) {
+        Object.entries(environment).forEach(([key, value]) => {
+          dockerCommand += ` -e ${key}=${value}`;
+        });
+      }
+      
+      // Add network
+      if (network) dockerCommand += ` --network ${network}`;
+      
+      // Add working directory
+      if (workdir) dockerCommand += ` -w ${workdir}`;
+      
+      // Add restart policy
+      if (restart) dockerCommand += ` --restart ${restart}`;
+      
+      // Add image
+      dockerCommand += ` ${image}`;
+      
+      // Add command
+      if (command) dockerCommand += ` ${command}`;
+      
+      const result = await executeDockerCommand(dockerCommand);
+      
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Container created successfully:\n\nCommand: ${dockerCommand}\n\nOutput:\n${result.stdout}${result.stderr ? `\nWarnings:\n${result.stderr}` : ""}`
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error creating container: ${error instanceof Error ? error.message : String(error)}`
+          }
+        ],
+        isError: true
+      };
+    }
+  }
+);
+
+// Register Docker registry and search tool
+server.registerTool(
+  "docker_registry",
+  {
+    title: "Docker Registry Operations",
+    description: "Search Docker Hub, login/logout, push/pull operations",
+    inputSchema: {
+      action: z.enum(["search", "login", "logout", "push", "pull", "tag"]).describe("Registry action to perform"),
+      query: z.string().optional().describe("Search query (required for search)"),
+      image: z.string().optional().describe("Image name (required for push, pull, tag)"),
+      tag: z.string().optional().describe("Image tag"),
+      newTag: z.string().optional().describe("New tag name (required for tag action)"),
+      registry: z.string().optional().describe("Registry URL (optional for login/logout)"),
+      username: z.string().optional().describe("Username for login"),
+      password: z.string().optional().describe("Password for login")
+    }
+  },
+  async ({ action, query, image, tag, newTag, registry, username, password }) => {
+    try {
+      let command: string;
+      
+      switch (action) {
+        case "search":
+          if (!query) throw new Error("Search query is required");
+          command = `docker search ${query}`;
+          break;
+        case "login":
+          command = `docker login${registry ? ` ${registry}` : ""}`;
+          if (username && password) {
+            command += ` -u ${username} -p ${password}`;
+          }
+          break;
+        case "logout":
+          command = `docker logout${registry ? ` ${registry}` : ""}`;
+          break;
+        case "push":
+          if (!image) throw new Error("Image name is required for push");
+          command = `docker push ${image}${tag ? `:${tag}` : ""}`;
+          break;
+        case "pull":
+          if (!image) throw new Error("Image name is required for pull");
+          command = `docker pull ${image}${tag ? `:${tag}` : ""}`;
+          break;
+        case "tag":
+          if (!image || !newTag) throw new Error("Image name and new tag are required for tag action");
+          command = `docker tag ${image}${tag ? `:${tag}` : ""} ${newTag}`;
+          break;
+      }
+      
+      const result = await executeDockerCommand(command);
+      
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Registry ${action} completed:\n\n${result.stdout}${result.stderr ? `\nWarnings:\n${result.stderr}` : ""}`
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error with registry operation: ${error instanceof Error ? error.message : String(error)}`
+          }
+        ],
+        isError: true
+      };
+    }
+  }
+);
+
+// Register Docker monitoring and troubleshooting tool
+server.registerTool(
+  "docker_monitoring",
+  {
+    title: "Docker Monitoring and Troubleshooting",
+    description: "Monitor containers, get logs, inspect resources, and troubleshoot issues",
+    inputSchema: {
+      action: z.enum(["logs", "inspect", "exec", "top", "port", "stats", "events", "diff"]).describe("Monitoring action to perform"),
+      container: z.string().optional().describe("Container name or ID"),
+      follow: z.boolean().optional().describe("Follow log output"),
+      tail: z.number().optional().describe("Number of lines to show from end of logs"),
+      command: z.string().optional().describe("Command to execute in container (for exec)"),
+      since: z.string().optional().describe("Show logs since timestamp"),
+      until: z.string().optional().describe("Show logs until timestamp")
+    }
+  },
+  async ({ action, container, follow, tail, command, since, until }) => {
+    try {
+      let dockerCommand: string;
+      
+      switch (action) {
+        case "logs":
+          if (!container) throw new Error("Container name is required for logs");
+          dockerCommand = `docker logs`;
+          if (follow) dockerCommand += " -f";
+          if (tail) dockerCommand += ` --tail ${tail}`;
+          if (since) dockerCommand += ` --since ${since}`;
+          if (until) dockerCommand += ` --until ${until}`;
+          dockerCommand += ` ${container}`;
+          break;
+        case "inspect":
+          if (!container) throw new Error("Container name is required for inspect");
+          dockerCommand = `docker inspect ${container}`;
+          break;
+        case "exec":
+          if (!container) throw new Error("Container name is required for exec");
+          const execCommand = command || "bash";
+          dockerCommand = `docker exec -it ${container} ${execCommand}`;
+          break;
+        case "top":
+          if (!container) throw new Error("Container name is required for top");
+          dockerCommand = `docker top ${container}`;
+          break;
+        case "port":
+          if (!container) throw new Error("Container name is required for port");
+          dockerCommand = `docker port ${container}`;
+          break;
+        case "stats":
+          dockerCommand = container ? `docker stats --no-stream ${container}` : "docker stats --no-stream";
+          break;
+        case "events":
+          dockerCommand = "docker events --since 1h";
+          if (container) dockerCommand += ` --filter container=${container}`;
+          break;
+        case "diff":
+          if (!container) throw new Error("Container name is required for diff");
+          dockerCommand = `docker diff ${container}`;
+          break;
+      }
+      
+      const result = await executeDockerCommand(dockerCommand);
+      
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Monitoring ${action} completed:\n\n${result.stdout}${result.stderr ? `\nWarnings:\n${result.stderr}` : ""}`
+          }
+        ]
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error with monitoring operation: ${error instanceof Error ? error.message : String(error)}`
+          }
+        ],
+        isError: true
+      };
+    }
+  }
+);
+
 // Register Docker Compose tool
 server.registerTool(
   "docker_compose",
@@ -408,49 +1019,171 @@ server.registerResource(
   "docker://help",
   {
     title: "Docker Commands Help",
-    description: "Docker commands and natural language examples",
+    description: "Comprehensive Docker commands and natural language examples",
     mimeType: "text/plain"
   },
   async (uri) => {
     const helpContent = `
-Docker MCP Server - Natural Language Commands
+Docker MCP Server - Comprehensive Natural Language Commands
 
-CONTAINER OPERATIONS:
-- "list containers" or "list running containers" → docker ps
-- "list all containers" → docker ps -a
-- "start container <name>" → docker start <name>
-- "stop container <name>" → docker stop <name>
-- "remove container <name>" → docker rm <name>
-- "restart container <name>" → docker restart <name>
+=== CONTAINER OPERATIONS ===
+Basic Container Management:
+- "list all containers" / "show containers" → docker ps -a
+- "list running containers" / "what containers are running" → docker ps
+- "start container nginx" / "launch nginx" → docker start nginx
+- "stop container myapp" / "halt myapp" → docker stop myapp
+- "restart container web" / "reboot web" → docker restart web
+- "remove container old-app" / "delete old-app" → docker rm old-app
+- "kill container stuck-app" → docker kill stuck-app
 
-IMAGE OPERATIONS:
-- "list images" → docker images
-- "pull image <name>" → docker pull <name>
-- "remove image <name>" → docker rmi <name>
-- "build image <name>" → docker build -t <name> .
+Container Inspection & Monitoring:
+- "inspect container nginx" / "examine nginx" → docker inspect nginx
+- "logs from container web" / "show logs for web" → docker logs web
+- "follow logs from api" → docker logs -f api
+- "last 50 lines from web logs" → docker logs --tail 50 web
+- "execute bash in container web" / "run bash into web" → docker exec -it web bash
+- "processes in container api" / "top in api" → docker top api
+- "ports of container web" / "port mappings for web" → docker port web
+- "stats for container api" → docker stats --no-stream api
+- "changes in container web" → docker diff web
 
-SYSTEM OPERATIONS:
-- "system info" → docker system info
-- "version" → docker --version
-- "system prune" → docker system prune -f
-- "docker stats" → docker stats --no-stream
-- "disk usage" → docker system df
+Container Creation (Advanced):
+- Use create_container tool for complex container setups with:
+  - Port mappings: ['8080:80', '3000:3000']
+  - Volume mounts: ['/host/data:/app/data']
+  - Environment variables: {'NODE_ENV': 'production'}
+  - Network connections, restart policies, working directories
 
-DOCKER COMPOSE:
-- "compose up" → docker-compose up -d
-- "compose down" → docker-compose down
-- "compose logs" → docker-compose logs
+=== IMAGE OPERATIONS ===
+Image Management:
+- "list images" / "show all images" → docker images
+- "list dangling images" → docker images -f dangling=true
+- "pull image nginx" / "download nginx" → docker pull nginx
+- "pull nginx with tag latest" → docker pull nginx:latest
+- "push image myapp" / "upload myapp" → docker push myapp
+- "remove image old-version" / "delete old-version" → docker rmi old-version
+- "force remove image stuck" → docker rmi -f stuck
+- "tag image myapp as production" → docker tag myapp production
 
-NETWORK & VOLUMES:
-- "list networks" → docker network ls
-- "list volumes" → docker volume ls
+Image Building:
+- "build image myapp" → docker build -t myapp .
+- "build image from custom dockerfile" → docker build -f Dockerfile.prod -t myapp .
+- "create image webapp from current directory" → docker build -t webapp .
 
-You can use either natural language commands or direct Docker commands.
-Examples:
-- "show me all running containers"
-- "stop the nginx container"
-- "pull the latest ubuntu image"
-- "docker ps -a"
+Image Registry:
+- "search for nginx" / "find nginx images" → docker search nginx
+- "login to docker hub" → docker login
+- "logout from registry" → docker logout
+- Use docker_registry tool for advanced registry operations
+
+=== VOLUME OPERATIONS ===
+Volume Management:
+- "list volumes" / "show all volumes" → docker volume ls
+- "list dangling volumes" → docker volume ls -f dangling=true
+- "create volume mydata" / "make volume storage" → docker volume create mydata
+- "remove volume old-data" / "delete volume temp" → docker volume rm old-data
+- "inspect volume mydata" / "examine volume storage" → docker volume inspect mydata
+- "cleanup unused volumes" → docker volume prune -f
+
+=== NETWORK OPERATIONS ===
+Network Management:
+- "list networks" / "show networks" → docker network ls
+- "create network mynet" / "make network backend" → docker network create mynet
+- "create bridge network frontend" → docker network create --driver bridge frontend
+- "create overlay network cluster" → docker network create --driver overlay cluster
+- "remove network old-net" / "delete network temp" → docker network rm old-net
+- "inspect network mynet" → docker network inspect mynet
+- "connect container web to network backend" → docker network connect backend web
+- "disconnect container api from network frontend" → docker network disconnect frontend api
+- "cleanup unused networks" → docker network prune -f
+
+=== SYSTEM OPERATIONS ===
+System Information:
+- "system info" / "docker information" → docker system info
+- "version" / "docker version" → docker --version && docker-compose --version
+- "stats" / "monitor containers" → docker stats --no-stream
+- "continuous stats" / "follow stats" → docker stats
+- "disk usage" / "storage usage" → docker system df
+- "detailed disk usage" / "verbose storage info" → docker system df -v
+
+System Cleanup:
+- "cleanup" / "prune system" → docker system prune -f
+- "cleanup everything" / "prune all" → docker system prune -a -f
+- "cleanup with volumes" → docker system prune --volumes -f
+
+=== DOCKER COMPOSE OPERATIONS ===
+Compose Lifecycle:
+- "compose up" / "start services" → docker-compose up -d
+- "compose up in foreground" → docker-compose up
+- "compose up with build" / "start and rebuild" → docker-compose up -d --build
+- "compose up service web" → docker-compose up -d web
+- "compose down" / "stop services" → docker-compose down
+- "compose down with volumes" → docker-compose down --volumes
+- "compose down with images" → docker-compose down --rmi all
+
+Compose Monitoring:
+- "compose logs" / "service logs" → docker-compose logs
+- "compose logs from web" → docker-compose logs web
+- "follow compose logs" → docker-compose logs -f
+- "compose status" / "compose ps" → docker-compose ps
+- "restart compose" / "restart services" → docker-compose restart
+- "restart service api" → docker-compose restart api
+
+Compose Building:
+- "compose build" / "rebuild services" → docker-compose build
+- "compose build service web" → docker-compose build web
+- "fresh compose build" / "clean rebuild" → docker-compose build --no-cache
+
+=== ADVANCED OPERATIONS ===
+File Operations:
+- "copy file.txt from container web" → docker cp web:/path/file.txt .
+- "copy data.json to container api" → docker cp data.json api:/tmp/
+
+Events & Troubleshooting:
+- "show docker events" → docker events --since 1h
+- "events for container web" → docker events --filter container=web
+- "differences in container api" → docker diff api
+
+Container Utilities:
+- "run ubuntu interactively" → docker run -it ubuntu bash
+- "run nginx detached on port 8080" → docker run -d -p 8080:80 nginx
+- "run redis with volume" → docker run -d -v redis-data:/data redis
+
+=== DIRECT COMMANDS ===
+You can also use direct Docker commands:
+- "docker ps -a --format table"
+- "docker run -it --rm alpine sh"
+- "docker build --no-cache -t myapp ."
+- "docker logs --since 1h --until 30m mycontainer"
+
+=== TOOL CATEGORIES ===
+1. execute_docker_command - General NLP command execution
+2. manage_containers - Container lifecycle operations
+3. manage_images - Image operations and building
+4. manage_volumes - Volume management
+5. manage_networks - Network operations
+6. create_container - Advanced container creation
+7. docker_registry - Registry and search operations
+8. docker_monitoring - Monitoring and troubleshooting
+9. docker_info - System information
+10. docker_compose - Docker Compose operations
+
+=== EXAMPLES OF COMPLEX OPERATIONS ===
+Natural Language → Command Translation:
+
+"Show me all stopped containers that were created yesterday"
+→ docker ps -a --filter "status=exited" --filter "since=24h"
+
+"Remove all containers that have been stopped for more than a week"
+→ docker container prune --filter "until=168h"
+
+"Start an nginx container on port 8080 with a custom volume"
+→ docker run -d -p 8080:80 -v /host/data:/usr/share/nginx/html nginx
+
+"Build my app image without using cache and tag it as version 2.0"
+→ docker build --no-cache -t myapp:2.0 .
+
+The server understands context and can parse complex natural language requests!
 `;
 
     return {
