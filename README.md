@@ -1,8 +1,8 @@
-# Docker MCP Server - Extensive Edition
+# Docker MCP Server - Enterprise Edition
 
-A comprehensive Model Context Protocol (MCP) server that provides extensive Docker functionality through natural language commands. This server interprets complex natural language requests and executes corresponding Docker operations with advanced features.
+A comprehensive Model Context Protocol (MCP) server that provides enterprise-level Docker functionality through natural language commands. This enhanced server includes advanced project management, remote Docker support, monitoring, backup capabilities, and much more.
 
-## 🚀 Enhanced Features
+## 🚀 Enterprise Features
 
 ### 🧠 Advanced Natural Language Processing
 The server now understands complex natural language patterns and provides extensive Docker command coverage:
@@ -14,73 +14,104 @@ The server now understands complex natural language patterns and provides extens
 - "execute bash in the web container" → `docker exec -it web bash`
 - "what processes are running in database container" → `docker top database`
 
-**Image Operations:**
-- "pull ubuntu with latest tag" → `docker pull ubuntu:latest`
-- "build my app without cache" → `docker build --no-cache -t myapp .`
-- "tag myapp as production version" → `docker tag myapp:latest myapp:production`
-- "search for nginx images" → `docker search nginx`
+**Project-Based Management:**
+- "plan project wordpress with wordpress and mysql database on port 9000"
+- "apply the deployment plan"
+- "status project myapp"
+- "destroy project completely"
 
-**Volume & Network Management:**
-- "create volume for database data" → `docker volume create db-data`
-- "connect web container to frontend network" → `docker network connect frontend web`
-- "list all dangling volumes" → `docker volume ls -f dangling=true`
+**Remote Docker Support:**
+- "connect to ssh://user@production.server.com"
+- "status of remote connection" 
+- "test connection to remote docker"
+- "disconnect from remote host"
 
-**System Operations:**
-- "cleanup everything including volumes" → `docker system prune --volumes -f`
-- "show detailed disk usage" → `docker system df -v`
-- "monitor all containers continuously" → `docker stats`
+**Advanced Monitoring:**
+- "live stats for all containers"
+- "health check for nginx container"
+- "system events since yesterday"
+- "performance overview"
+
+**Backup & Migration:**
+- "backup container production-api"
+- "export project ecommerce to /backups"
+- "list all available backups"
+- "cleanup backups older than 7 days"
 
 ### 🛠 Comprehensive Tool Suite
 
 #### 1. **execute_docker_command** - Smart Natural Language Processor
 - Converts natural language to Docker commands
-- Supports 100+ natural language patterns
+- Supports 200+ natural language patterns
 - Handles complex command construction with flags and options
 
-#### 2. **manage_containers** - Container Lifecycle Management
+#### 2. **docker_compose_advanced** - Plan+Apply Project Management
+- Natural language to multi-service deployments
+- Terraform-like plan+apply workflow
+- Automatic dependency management and resource labeling
+- Project-based resource grouping and cleanup
+
+#### 3. **docker_remote_connection** - Remote Docker Management
+- Connect to remote Docker hosts via SSH or TCP
+- Seamless switching between local and remote environments
+- Connection testing and status monitoring
+- Support for production server management
+
+#### 4. **docker_monitoring_advanced** - Enhanced Monitoring
+- Real-time container statistics and health checks
+- System events and performance monitoring
+- Comprehensive resource usage analysis
+- Container health status and diagnostics
+
+#### 5. **docker_backup_migration** - Backup & Migration
+- Complete container and volume backups
+- Project-level export/import capabilities
+- Automated backup cleanup and management
+- Migration support for entire environments
+
+#### 6. **create_container** - Advanced Container Creation
+- Full container creation with all Docker options
+- Health checks, resource constraints, security options
+- Port mappings, volume mounts, environment variables
+- Project labeling and network connections
+
+#### 7. **manage_containers** - Container Lifecycle Management
 - List, start, stop, restart, remove containers
 - Advanced filtering and status checking
 - Graceful container lifecycle operations
 
-#### 3. **manage_images** - Complete Image Operations
+#### 8. **manage_images** - Complete Image Operations
 - List, pull, push, build, remove, tag images
 - Support for custom Dockerfiles and build contexts
 - Advanced build options (no-cache, build args)
 
-#### 4. **manage_volumes** - Volume Management System
+#### 9. **manage_volumes** - Volume Management System
 - Create, remove, inspect, list volumes
 - Prune unused volumes
 - Support for different volume drivers
 
-#### 5. **manage_networks** - Network Administration
+#### 10. **manage_networks** - Network Administration
 - Create, remove, inspect networks
 - Connect/disconnect containers to/from networks
 - Support for bridge, overlay, host networks
 
-#### 6. **create_container** - Advanced Container Creation
-- Full container creation with all options
-- Port mappings, volume mounts, environment variables
-- Network connections, restart policies, working directories
-- Interactive and detached modes
-
-#### 7. **docker_registry** - Registry Operations
-- Search Docker Hub
+#### 11. **docker_registry** - Registry Operations
+- Search Docker Hub and private registries
 - Login/logout from registries
 - Push/pull operations with tag management
-- Support for private registries
+- Support for authentication
 
-#### 8. **docker_monitoring** - Monitoring & Troubleshooting
+#### 12. **docker_monitoring** - Basic Monitoring & Troubleshooting
 - Container logs with timestamps and filtering
 - Resource inspection and statistics
 - Process monitoring and file system changes
-- Event streaming and container execution
 
-#### 9. **docker_info** - System Information
+#### 13. **docker_info** - System Information
 - Comprehensive system information
 - Version details and statistics
 - Disk usage and resource monitoring
 
-#### 10. **docker_compose** - Docker Compose Management
+#### 14. **docker_compose** - Traditional Docker Compose Management
 - Full service lifecycle management
 - Build, up, down, restart operations
 - Service-specific operations and log management
@@ -247,15 +278,42 @@ npm test         # Test the server
 - Performance optimized
 - Memory efficient operation
 
-## 🎉 What's New in Extensive Edition
+## 🎉 What's New in Enterprise Edition
 
-✅ **10 Specialized Tools** - Each covering specific Docker domains  
-✅ **200+ Natural Language Patterns** - Understands complex requests  
-✅ **Advanced Container Creation** - Full parameter support  
-✅ **Registry Operations** - Search, login, push/pull with auth  
-✅ **Monitoring & Troubleshooting** - Comprehensive debugging tools  
-✅ **Volume & Network Management** - Complete infrastructure control  
-✅ **Smart Command Parsing** - Context-aware interpretation  
-✅ **Production Features** - Error handling, logging, performance  
+✅ **14 Specialized Tools** - Each covering specific Docker domains  
+✅ **Plan+Apply Workflow** - Terraform-like project deployment  
+✅ **Remote Docker Support** - SSH/TCP connection to production servers  
+✅ **Advanced Monitoring** - Health checks, events, performance metrics  
+✅ **Backup & Migration** - Complete environment export/import  
+✅ **Project Management** - Resource grouping and lifecycle management  
+✅ **Enhanced Container Creation** - Health checks, resource limits, security  
+✅ **300+ Natural Language Patterns** - Understands complex requests  
+✅ **Production Features** - Error handling, logging, performance optimization  
 
-The Docker MCP Server Extensive Edition provides enterprise-level Docker management through natural language - making Docker operations accessible, intuitive, and powerful! 🐳
+## 🎯 Enterprise Use Cases
+
+### DevOps & CI/CD
+- Remote server management via SSH
+- Automated deployment with plan+apply workflow
+- Complete environment backup and migration
+- Resource monitoring and health checks
+
+### Development Teams
+- Project-based resource management
+- Natural language container orchestration
+- Advanced debugging and monitoring
+- Simplified Docker operations
+
+### System Administration
+- Remote Docker host management
+- Comprehensive system monitoring
+- Automated cleanup and maintenance
+- Security-focused container deployment
+
+### Production Operations
+- Health monitoring and alerting
+- Backup and disaster recovery
+- Performance analysis and optimization
+- Multi-environment management
+
+The Docker MCP Server Enterprise Edition provides enterprise-level Docker management through natural language - making Docker operations accessible, intuitive, and powerful for teams of all sizes! 🐳

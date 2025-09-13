@@ -14,6 +14,371 @@ const server = new McpServer({
   version: "1.0.0"
 });
 
+// Project-based resource management
+interface DockerProject {
+  name: string;
+  containers: any[];
+  networks: any[];
+  volumes: any[];
+}
+
+interface ServiceConfig {
+  image: string;
+  ports?: string[];
+  environment?: Record<string, string>;
+  volumes?: string[];
+  depends_on?: string[];
+}
+
+interface ComposeProject {
+  name: string;
+  services: Record<string, ServiceConfig>;
+  networks?: Record<string, any>;
+  volumes?: Record<string, any>;
+}
+
+class ProjectManager {
+  private static getProjectLabel(projectName: string): string {
+    return `mcp-server-docker.project=${projectName}`;
+  }
+
+  static async getProjectResources(projectName: string): Promise<DockerProject> {
+    const label = this.getProjectLabel(projectName);
+    
+    try {
+      const [containers, networks, volumes] = await Promise.all([
+        executeDockerCommand(`docker ps -a --filter "label=${label}" --format "{{json .}}"`).then(r => 
+          r.stdout.trim().split('\n').filter(line => line).map(line => JSON.parse(line))
+        ).catch(() => []),
+        executeDockerCommand(`docker network ls --filter "label=${label}" --format "{{json .}}"`).then(r => 
+          r.stdout.trim().split('\n').filter(line => line).map(line => JSON.parse(line))
+        ).catch(() => []),
+        executeDockerCommand(`docker volume ls --filter "label=${label}" --format "{{json .}}"`).then(r => 
+          r.stdout.trim().split('\n').filter(line => line).map(line => JSON.parse(line))
+        ).catch(() => [])
+      ]);
+
+      return { name: projectName, containers, networks, volumes };
+    } catch (error) {
+      return { name: projectName, containers: [], networks: [], volumes: [] };
+    }
+  }
+
+  static addProjectLabel(command: string, projectName: string): string {
+    const label = this.getProjectLabel(projectName);
+    
+    // Add label to Docker run commands
+    if (command.includes('docker run') || command.includes('docker create')) {
+      return command.replace(/(docker (?:run|create))/, `$1 --label "${label}"`);
+    }
+    
+    // Add label to Docker network create commands
+    if (command.includes('docker network create')) {
+      return command.replace(/(docker network create)/, `$1 --label "${label}"`);
+    }
+    
+    // Add label to Docker volume create commands
+    if (command.includes('docker volume create')) {
+      return command.replace(/(docker volume create)/, `$1 --label "${label}"`);
+    }
+    
+    return command;
+  }
+}
+
+// Docker Compose Manager with plan+apply functionality
+class DockerComposeManager {
+  private static projects: Map<string, any> = new Map();
+
+  static async parseNaturalLanguage(description: string, projectName: string): Promise<ComposeProject> {
+    // Advanced natural language parsing for multi-service deployments
+    const services: Record<string, ServiceConfig> = {};
+    const networks: Record<string, any> = {};
+    const volumes: Record<string, any> = {};
+
+    // Parse common patterns
+    if (description.includes('wordpress') || description.includes('wp')) {
+      services.wordpress = {
+        image: 'wordpress:latest',
+        ports: ['9000:80'],
+        environment: {
+          WORDPRESS_DB_HOST: 'mysql',
+          WORDPRESS_DB_USER: 'wordpress',
+          WORDPRESS_DB_PASSWORD: 'wordpress',
+          WORDPRESS_DB_NAME: 'wordpress'
+        },
+        depends_on: ['mysql']
+      };
+      
+      services.mysql = {
+        image: 'mysql:8.0',
+        environment: {
+          MYSQL_DATABASE: 'wordpress',
+          MYSQL_USER: 'wordpress',
+          MYSQL_PASSWORD: 'wordpress',
+          MYSQL_ROOT_PASSWORD: 'rootpassword'
+        },
+        volumes: ['mysql-data:/var/lib/mysql']
+      };
+      
+      volumes['mysql-data'] = {};
+    }
+
+    if (description.includes('nginx')) {
+      const port = description.match(/port\s+(\d+)/)?.[1] || '80';
+      services.nginx = {
+        image: 'nginx:latest',
+        ports: [`${port}:80`]
+      };
+    }
+
+    if (description.includes('redis')) {
+      services.redis = {
+        image: 'redis:alpine',
+        ports: ['6379:6379']
+      };
+    }
+
+    if (description.includes('postgres')) {
+      services.postgres = {
+        image: 'postgres:15',
+        environment: {
+          POSTGRES_DB: 'myapp',
+          POSTGRES_USER: 'user',
+          POSTGRES_PASSWORD: 'password'
+        },
+        volumes: ['postgres-data:/var/lib/postgresql/data']
+      };
+      
+      volumes['postgres-data'] = {};
+    }
+
+    return { name: projectName, services, networks, volumes };
+  }
+
+  static async generatePlan(project: any, currentResources: DockerProject): Promise<string> {
+    const actions: string[] = [];
+
+    // Compare desired vs current state
+    const currentContainerNames = currentResources.containers.map(c => c.Names || c.name);
+    const desiredServiceNames = Object.keys(project.services);
+
+    // Plan container actions
+    for (const serviceName of desiredServiceNames) {
+      const containerName = `${project.name}-${serviceName}`;
+      if (!currentContainerNames.some(name => name.includes(serviceName))) {
+        actions.push(`CREATE container ${containerName} from ${project.services[serviceName].image}`);
+      }
+    }
+
+    // Plan volume actions
+    const currentVolumeNames = currentResources.volumes.map(v => v.Name || v.name);
+    const desiredVolumeNames = Object.keys(project.volumes || {});
+    
+    for (const volumeName of desiredVolumeNames) {
+      const fullVolumeName = `${project.name}-${volumeName}`;
+      if (!currentVolumeNames.includes(fullVolumeName)) {
+        actions.push(`CREATE volume ${fullVolumeName}`);
+      }
+    }
+
+    // Plan network actions if needed
+    if (Object.keys(project.services).length > 1) {
+      const networkName = `${project.name}-network`;
+      const currentNetworkNames = currentResources.networks.map(n => n.Name || n.name);
+      if (!currentNetworkNames.includes(networkName)) {
+        actions.push(`CREATE network ${networkName}`);
+      }
+    }
+
+    if (actions.length === 0) {
+      return "No changes to make; project is up-to-date.";
+    }
+
+    return `## Plan\n\nI plan to take the following actions:\n\n${actions.map((action, i) => `${i + 1}. ${action}`).join('\n')}\n\nRespond \`apply\` to apply this plan. Otherwise, provide feedback and I will present you with an updated plan.`;
+  }
+
+  static async applyPlan(projectName: string): Promise<string> {
+    const project = this.projects.get(projectName);
+    if (!project) {
+      throw new Error(`No plan found for project ${projectName}`);
+    }
+
+    const results: string[] = [];
+
+    try {
+      // Create network first if needed
+      if (Object.keys(project.services).length > 1) {
+        const networkName = `${projectName}-network`;
+        const networkCmd = ProjectManager.addProjectLabel(`docker network create ${networkName}`, projectName);
+        await executeDockerCommand(networkCmd);
+        results.push(`✅ Created network ${networkName}`);
+      }
+
+      // Create volumes
+      for (const volumeName of Object.keys(project.volumes || {})) {
+        const fullVolumeName = `${projectName}-${volumeName}`;
+        const volumeCmd = ProjectManager.addProjectLabel(`docker volume create ${fullVolumeName}`, projectName);
+        await executeDockerCommand(volumeCmd);
+        results.push(`✅ Created volume ${fullVolumeName}`);
+      }
+
+      // Create and start containers
+      for (const [serviceName, config] of Object.entries(project.services) as [string, ServiceConfig][]) {
+        const containerName = `${projectName}-${serviceName}`;
+        let runCmd = `docker run -d --name ${containerName}`;
+
+        // Add ports
+        if (config.ports) {
+          config.ports.forEach((port: string) => {
+            runCmd += ` -p ${port}`;
+          });
+        }
+
+        // Add environment variables
+        if (config.environment) {
+          Object.entries(config.environment).forEach(([key, value]) => {
+            runCmd += ` -e ${key}=${value}`;
+          });
+        }
+
+        // Add volumes
+        if (config.volumes) {
+          config.volumes.forEach((volume: string) => {
+            if (volume.includes(':')) {
+              // Replace volume name with project-prefixed name
+              const [volumeName, mountPoint] = volume.split(':');
+              const fullVolumeName = `${projectName}-${volumeName}`;
+              runCmd += ` -v ${fullVolumeName}:${mountPoint}`;
+            } else {
+              runCmd += ` -v ${volume}`;
+            }
+          });
+        }
+
+        // Add network
+        if (Object.keys(project.services).length > 1) {
+          runCmd += ` --network ${projectName}-network`;
+        }
+
+        runCmd += ` ${config.image}`;
+
+        const labeledCmd = ProjectManager.addProjectLabel(runCmd, projectName);
+        await executeDockerCommand(labeledCmd);
+        results.push(`✅ Created and started container ${containerName}`);
+      }
+
+      return `## Apply Complete\n\n${results.join('\n')}\n\nProject ${projectName} has been successfully deployed!`;
+    } catch (error) {
+      throw new Error(`Failed to apply plan: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  static async destroyProject(projectName: string): Promise<string> {
+    const resources = await ProjectManager.getProjectResources(projectName);
+    const results: string[] = [];
+
+    // Stop and remove containers
+    for (const container of resources.containers) {
+      try {
+        await executeDockerCommand(`docker stop ${container.ID || container.id}`);
+        await executeDockerCommand(`docker rm ${container.ID || container.id}`);
+        results.push(`✅ Removed container ${container.Names || container.name}`);
+      } catch (error) {
+        results.push(`❌ Failed to remove container ${container.Names || container.name}`);
+      }
+    }
+
+    // Remove volumes
+    for (const volume of resources.volumes) {
+      try {
+        await executeDockerCommand(`docker volume rm ${volume.Name || volume.name}`);
+        results.push(`✅ Removed volume ${volume.Name || volume.name}`);
+      } catch (error) {
+        results.push(`❌ Failed to remove volume ${volume.Name || volume.name}`);
+      }
+    }
+
+    // Remove networks
+    for (const network of resources.networks) {
+      try {
+        await executeDockerCommand(`docker network rm ${network.Name || network.name}`);
+        results.push(`✅ Removed network ${network.Name || network.name}`);
+      } catch (error) {
+        results.push(`❌ Failed to remove network ${network.Name || network.name}`);
+      }
+    }
+
+    return `## Destroy Complete\n\n${results.join('\n')}\n\nProject ${projectName} has been destroyed.`;
+  }
+
+  static setProject(projectName: string, project: any): void {
+    this.projects.set(projectName, project);
+  }
+}
+
+// Remote Docker Support
+class RemoteDockerManager {
+  private static currentHost: string | null = null;
+
+  static setDockerHost(host: string): void {
+    this.currentHost = host;
+    process.env.DOCKER_HOST = host;
+  }
+
+  static getDockerHost(): string | null {
+    return this.currentHost || process.env.DOCKER_HOST || null;
+  }
+
+  static async testConnection(): Promise<boolean> {
+    try {
+      await executeDockerCommand("docker version");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  static async getConnectionInfo(): Promise<string> {
+    const host = this.getDockerHost();
+    const isConnected = await this.testConnection();
+    
+    return `Docker Host: ${host || 'local'}\nConnection: ${isConnected ? '✅ Connected' : '❌ Failed'}`;
+  }
+}
+
+// Enhanced monitoring capabilities
+class DockerMonitor {
+  static async getLiveStats(containerName?: string): Promise<string> {
+    const command = containerName 
+      ? `docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}\t{{.BlockIO}}" ${containerName}`
+      : `docker stats --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}\t{{.BlockIO}}"`;
+    
+    const result = await executeDockerCommand(command);
+    return result.stdout;
+  }
+
+  static async getSystemEvents(since: string = "1h"): Promise<string> {
+    const command = `docker events --since ${since} --until now`;
+    const result = await executeDockerCommand(command);
+    return result.stdout;
+  }
+
+  static async getContainerHealth(containerName: string): Promise<string> {
+    try {
+      const inspect = await executeDockerCommand(`docker inspect ${containerName}`);
+      const data = JSON.parse(inspect.stdout)[0];
+      
+      const health = data.State.Health || { Status: "none" };
+      const state = data.State;
+      
+      return `Container: ${containerName}\nStatus: ${state.Status}\nHealth: ${health.Status}\nStarted: ${state.StartedAt}\nFinished: ${state.FinishedAt || 'N/A'}`;
+    } catch (error) {
+      throw new Error(`Failed to get health info: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+}
+
 // Helper function to execute Docker commands
 async function executeDockerCommand(command: string): Promise<{ stdout: string; stderr: string }> {
   try {
@@ -356,6 +721,438 @@ function parseDockerCommand(naturalLanguage: string): string {
   // Default to treating as direct docker command
   return `docker ${input}`;
 }
+
+// Register remote Docker connection tool
+server.registerTool(
+  "docker_remote_connection",
+  {
+    title: "Remote Docker Connection",
+    description: "Connect to remote Docker hosts via SSH or configure Docker host",
+    inputSchema: {
+      action: z.enum(["connect", "disconnect", "status", "test"]).describe("Connection action"),
+      host: z.string().optional().describe("Docker host URL (e.g., ssh://user@host, tcp://host:2376)"),
+      user: z.string().optional().describe("SSH username"),
+      keyPath: z.string().optional().describe("Path to SSH private key")
+    }
+  },
+  async ({ action, host, user, keyPath }) => {
+    try {
+      switch (action) {
+        case "connect":
+          if (!host) {
+            throw new Error("Host is required for connection");
+          }
+          
+          // Configure SSH connection if needed
+          if (host.startsWith("ssh://")) {
+            const sshHost = host.replace("ssh://", "");
+            if (user && !sshHost.includes("@")) {
+              host = `ssh://${user}@${sshHost}`;
+            }
+          }
+          
+          RemoteDockerManager.setDockerHost(host);
+          const isConnected = await RemoteDockerManager.testConnection();
+          
+          if (!isConnected) {
+            throw new Error("Failed to connect to remote Docker host");
+          }
+          
+          return {
+            content: [
+              {
+                type: "text",
+                text: `✅ Successfully connected to Docker host: ${host}\n\nUse 'docker_remote_connection' with action 'status' to check connection status.`
+              }
+            ]
+          };
+
+        case "disconnect":
+          RemoteDockerManager.setDockerHost("");
+          delete process.env.DOCKER_HOST;
+          
+          return {
+            content: [
+              {
+                type: "text",
+                text: "✅ Disconnected from remote Docker host. Using local Docker daemon."
+              }
+            ]
+          };
+
+        case "status":
+          const connectionInfo = await RemoteDockerManager.getConnectionInfo();
+          return {
+            content: [
+              {
+                type: "text",
+                text: `## Docker Connection Status\n\n${connectionInfo}`
+              }
+            ]
+          };
+
+        case "test":
+          const testResult = await RemoteDockerManager.testConnection();
+          const currentHost = RemoteDockerManager.getDockerHost();
+          
+          return {
+            content: [
+              {
+                type: "text",
+                text: `## Connection Test\n\nHost: ${currentHost || 'local'}\nStatus: ${testResult ? '✅ Connected' : '❌ Failed'}`
+              }
+            ]
+          };
+      }
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error with remote connection: ${error instanceof Error ? error.message : String(error)}`
+          }
+        ],
+        isError: true
+      };
+    }
+  }
+);
+
+// Docker Backup and Migration Manager
+class DockerBackup {
+  static async backupContainer(containerName: string, backupPath: string): Promise<string> {
+    const results: string[] = [];
+    
+    try {
+      // Create backup directory
+      await executeDockerCommand(`mkdir -p ${backupPath}`);
+      
+      // Export container as tar
+      const exportResult = await executeDockerCommand(`docker export ${containerName} > ${backupPath}/${containerName}-backup.tar`);
+      results.push(`✅ Exported container ${containerName} to ${backupPath}/${containerName}-backup.tar`);
+      
+      // Get container config
+      const inspectResult = await executeDockerCommand(`docker inspect ${containerName}`);
+      const configPath = `${backupPath}/${containerName}-config.json`;
+      await executeDockerCommand(`echo '${inspectResult.stdout}' > ${configPath}`);
+      results.push(`✅ Saved container configuration to ${configPath}`);
+      
+      // Backup volumes if any
+      const config = JSON.parse(inspectResult.stdout)[0];
+      const mounts = config.Mounts || [];
+      
+      for (const mount of mounts) {
+        if (mount.Type === 'volume') {
+          const volumeBackupPath = `${backupPath}/${mount.Name}-volume.tar`;
+          await executeDockerCommand(`docker run --rm -v ${mount.Name}:/volume -v ${backupPath}:/backup alpine tar czf /backup/${mount.Name}-volume.tar -C /volume .`);
+          results.push(`✅ Backed up volume ${mount.Name} to ${volumeBackupPath}`);
+        }
+      }
+      
+      return results.join('\n');
+    } catch (error) {
+      throw new Error(`Backup failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  static async exportProject(projectName: string, exportPath: string): Promise<string> {
+    const results: string[] = [];
+    const resources = await ProjectManager.getProjectResources(projectName);
+    
+    try {
+      // Create export directory
+      await executeDockerCommand(`mkdir -p ${exportPath}/${projectName}`);
+      
+      // Export each container
+      for (const container of resources.containers) {
+        const containerName = container.Names || container.name;
+        await this.backupContainer(containerName, `${exportPath}/${projectName}`);
+        results.push(`✅ Exported container ${containerName}`);
+      }
+      
+      // Export project metadata
+      const metadata = {
+        projectName,
+        exportDate: new Date().toISOString(),
+        resources: {
+          containers: resources.containers.length,
+          networks: resources.networks.length,
+          volumes: resources.volumes.length
+        }
+      };
+      
+      await executeDockerCommand(`echo '${JSON.stringify(metadata, null, 2)}' > ${exportPath}/${projectName}/project-metadata.json`);
+      results.push(`✅ Exported project metadata`);
+      
+      return `## Project Export Complete\n\n${results.join('\n')}\n\nProject ${projectName} has been exported to ${exportPath}/${projectName}`;
+    } catch (error) {
+      throw new Error(`Export failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+}
+
+// Register backup and migration tool
+server.registerTool(
+  "docker_backup_migration",
+  {
+    title: "Docker Backup and Migration",
+    description: "Backup containers, volumes, and entire projects for migration",
+    inputSchema: {
+      action: z.enum(["backup_container", "export_project", "list_backups", "cleanup_backups"]).describe("Backup action"),
+      containerName: z.string().optional().describe("Container name (required for backup_container)"),
+      projectName: z.string().optional().describe("Project name (required for export_project)"),
+      backupPath: z.string().optional().describe("Backup destination path"),
+      days: z.number().optional().describe("Days to keep backups (for cleanup)")
+    }
+  },
+  async ({ action, containerName, projectName, backupPath, days }) => {
+    try {
+      const defaultBackupPath = "/tmp/docker-backups";
+      const path = backupPath || defaultBackupPath;
+      
+      switch (action) {
+        case "backup_container":
+          if (!containerName) {
+            throw new Error("Container name is required for backup");
+          }
+          
+          const backupResult = await DockerBackup.backupContainer(containerName, path);
+          return {
+            content: [
+              {
+                type: "text",
+                text: `## Container Backup Complete\n\n${backupResult}`
+              }
+            ]
+          };
+
+        case "export_project":
+          if (!projectName) {
+            throw new Error("Project name is required for export");
+          }
+          
+          const exportResult = await DockerBackup.exportProject(projectName, path);
+          return {
+            content: [
+              {
+                type: "text",
+                text: exportResult
+              }
+            ]
+          };
+
+        case "list_backups":
+          const listResult = await executeDockerCommand(`find ${path} -name "*.tar" -o -name "*-config.json" | head -20`);
+          return {
+            content: [
+              {
+                type: "text",
+                text: `## Available Backups\n\n\`\`\`\n${listResult.stdout || 'No backups found'}\n\`\`\``
+              }
+            ]
+          };
+
+        case "cleanup_backups":
+          const cleanupDays = days || 7;
+          const cleanupResult = await executeDockerCommand(`find ${path} -type f -mtime +${cleanupDays} -delete`);
+          return {
+            content: [
+              {
+                type: "text",
+                text: `✅ Cleaned up backups older than ${cleanupDays} days from ${path}`
+              }
+            ]
+          };
+      }
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error with backup/migration: ${error instanceof Error ? error.message : String(error)}`
+          }
+        ],
+        isError: true
+      };
+    }
+  }
+);
+
+// Register advanced Docker Compose tool with plan+apply functionality
+server.registerTool(
+  "docker_monitoring_advanced",
+  {
+    title: "Advanced Docker Monitoring",
+    description: "Enhanced monitoring with health checks, events, and detailed statistics",
+    inputSchema: {
+      action: z.enum(["live_stats", "health", "events", "system_info", "performance"]).describe("Monitoring action"),
+      container: z.string().optional().describe("Container name (for container-specific actions)"),
+      since: z.string().optional().describe("Time period for events (e.g., '1h', '30m', '1d')"),
+      format: z.enum(["table", "json"]).optional().default("table").describe("Output format")
+    }
+  },
+  async ({ action, container, since, format }) => {
+    try {
+      switch (action) {
+        case "live_stats":
+          const stats = await DockerMonitor.getLiveStats(container);
+          return {
+            content: [
+              {
+                type: "text",
+                text: `## Live Docker Statistics\n\n\`\`\`\n${stats}\n\`\`\``
+              }
+            ]
+          };
+
+        case "health":
+          if (!container) {
+            throw new Error("Container name is required for health check");
+          }
+          const health = await DockerMonitor.getContainerHealth(container);
+          return {
+            content: [
+              {
+                type: "text",
+                text: `## Container Health Check\n\n${health}`
+              }
+            ]
+          };
+
+        case "events":
+          const events = await DockerMonitor.getSystemEvents(since || "1h");
+          return {
+            content: [
+              {
+                type: "text",
+                text: `## Docker System Events (last ${since || "1h"})\n\n\`\`\`\n${events}\n\`\`\``
+              }
+            ]
+          };
+
+        case "system_info":
+          const systemInfo = await executeDockerCommand("docker system info");
+          return {
+            content: [
+              {
+                type: "text",
+                text: `## Docker System Information\n\n\`\`\`\n${systemInfo.stdout}\n\`\`\``
+              }
+            ]
+          };
+
+        case "performance":
+          const [diskUsage, version, containers] = await Promise.all([
+            executeDockerCommand("docker system df -v"),
+            executeDockerCommand("docker version"),
+            executeDockerCommand("docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'")
+          ]);
+          
+          return {
+            content: [
+              {
+                type: "text",
+                text: `## Docker Performance Overview\n\n### Disk Usage\n\`\`\`\n${diskUsage.stdout}\n\`\`\`\n\n### Running Containers\n\`\`\`\n${containers.stdout}\n\`\`\`\n\n### Version\n\`\`\`\n${version.stdout}\n\`\`\``
+              }
+            ]
+          };
+      }
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error with advanced monitoring: ${error instanceof Error ? error.message : String(error)}`
+          }
+        ],
+        isError: true
+      };
+    }
+  }
+);
+
+// Register advanced Docker command execution tool
+server.registerTool(
+  "docker_compose_advanced",
+  {
+    title: "Advanced Docker Compose Manager",
+    description: "Manage Docker projects with natural language using plan+apply workflow",
+    inputSchema: {
+      action: z.enum(["plan", "apply", "destroy", "status"]).describe("Action to perform"),
+      projectName: z.string().describe("Unique name of the project"),
+      containers: z.string().optional().describe("Describe containers you want (required for plan)"),
+      command: z.enum(["help", "apply", "down", "ps", "quiet", "verbose", "destroy"]).optional().describe("Special commands")
+    }
+  },
+  async ({ action, projectName, containers, command }) => {
+    try {
+      switch (action) {
+        case "plan":
+          if (!containers) {
+            throw new Error("Container description is required for planning");
+          }
+          
+          const project = await DockerComposeManager.parseNaturalLanguage(containers, projectName);
+          DockerComposeManager.setProject(projectName, project);
+          
+          const currentResources = await ProjectManager.getProjectResources(projectName);
+          const plan = await DockerComposeManager.generatePlan(project, currentResources);
+          
+          return {
+            content: [
+              {
+                type: "text",
+                text: `## Docker Compose Manager - Project: ${projectName}\n\n${plan}\n\n### Resources Currently Present:\n**Containers:** ${currentResources.containers.length}\n**Networks:** ${currentResources.networks.length}\n**Volumes:** ${currentResources.volumes.length}`
+              }
+            ]
+          };
+
+        case "apply":
+          const applyResult = await DockerComposeManager.applyPlan(projectName);
+          return {
+            content: [
+              {
+                type: "text",
+                text: applyResult
+              }
+            ]
+          };
+
+        case "destroy":
+          const destroyResult = await DockerComposeManager.destroyProject(projectName);
+          return {
+            content: [
+              {
+                type: "text",
+                text: destroyResult
+              }
+            ]
+          };
+
+        case "status":
+          const resources = await ProjectManager.getProjectResources(projectName);
+          return {
+            content: [
+              {
+                type: "text",
+                text: `## Project Status: ${projectName}\n\n**Containers:** ${resources.containers.length} (${resources.containers.filter(c => c.State === 'running').length} running)\n**Networks:** ${resources.networks.length}\n**Volumes:** ${resources.volumes.length}\n\n### Containers:\n${resources.containers.map(c => `- ${c.Names || c.name}: ${c.State || c.status}`).join('\n') || 'None'}\n\n### Networks:\n${resources.networks.map(n => `- ${n.Name || n.name}`).join('\n') || 'None'}\n\n### Volumes:\n${resources.volumes.map(v => `- ${v.Name || v.name}`).join('\n') || 'None'}`
+              }
+            ]
+          };
+      }
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error with Docker Compose operation: ${error instanceof Error ? error.message : String(error)}`
+          }
+        ],
+        isError: true
+      };
+    }
+  }
+);
 
 // Register Docker command execution tool
 server.registerTool(
@@ -721,10 +1518,31 @@ server.registerTool(
       interactive: z.boolean().optional().default(false).describe("Run in interactive mode"),
       command: z.string().optional().describe("Command to run in container"),
       workdir: z.string().optional().describe("Working directory"),
-      restart: z.enum(["no", "on-failure", "always", "unless-stopped"]).optional().describe("Restart policy")
+      restart: z.enum(["no", "on-failure", "always", "unless-stopped"]).optional().describe("Restart policy"),
+      // Advanced options
+      healthCheck: z.object({
+        test: z.string(),
+        interval: z.string().optional(),
+        timeout: z.string().optional(),
+        retries: z.number().optional()
+      }).optional().describe("Health check configuration"),
+      resources: z.object({
+        memory: z.string().optional(),
+        cpus: z.string().optional(),
+        memorySwap: z.string().optional()
+      }).optional().describe("Resource constraints"),
+      security: z.object({
+        user: z.string().optional(),
+        readOnly: z.boolean().optional(),
+        tmpfs: z.array(z.string()).optional()
+      }).optional().describe("Security options"),
+      labels: z.record(z.string()).optional().describe("Container labels"),
+      hostname: z.string().optional().describe("Container hostname"),
+      domainname: z.string().optional().describe("Container domain name"),
+      projectName: z.string().optional().describe("Project name for resource grouping")
     }
   },
-  async ({ image, name, ports, volumes, environment, network, detached, interactive, command, workdir, restart }) => {
+  async ({ image, name, ports, volumes, environment, network, detached, interactive, command, workdir, restart, healthCheck, resources, security, labels, hostname, domainname, projectName }) => {
     try {
       let dockerCommand = "docker run";
       
@@ -763,11 +1581,55 @@ server.registerTool(
       // Add restart policy
       if (restart) dockerCommand += ` --restart ${restart}`;
       
+      // Add hostname
+      if (hostname) dockerCommand += ` --hostname ${hostname}`;
+      
+      // Add domain name
+      if (domainname) dockerCommand += ` --domainname ${domainname}`;
+      
+      // Add health check
+      if (healthCheck) {
+        dockerCommand += ` --health-cmd "${healthCheck.test}"`;
+        if (healthCheck.interval) dockerCommand += ` --health-interval ${healthCheck.interval}`;
+        if (healthCheck.timeout) dockerCommand += ` --health-timeout ${healthCheck.timeout}`;
+        if (healthCheck.retries) dockerCommand += ` --health-retries ${healthCheck.retries}`;
+      }
+      
+      // Add resource constraints
+      if (resources) {
+        if (resources.memory) dockerCommand += ` --memory ${resources.memory}`;
+        if (resources.cpus) dockerCommand += ` --cpus ${resources.cpus}`;
+        if (resources.memorySwap) dockerCommand += ` --memory-swap ${resources.memorySwap}`;
+      }
+      
+      // Add security options
+      if (security) {
+        if (security.user) dockerCommand += ` --user ${security.user}`;
+        if (security.readOnly) dockerCommand += " --read-only";
+        if (security.tmpfs) {
+          security.tmpfs.forEach(tmpfs => {
+            dockerCommand += ` --tmpfs ${tmpfs}`;
+          });
+        }
+      }
+      
+      // Add labels
+      if (labels) {
+        Object.entries(labels).forEach(([key, value]) => {
+          dockerCommand += ` --label "${key}=${value}"`;
+        });
+      }
+      
       // Add image
       dockerCommand += ` ${image}`;
       
       // Add command
       if (command) dockerCommand += ` ${command}`;
+      
+      // Add project label if specified
+      if (projectName) {
+        dockerCommand = ProjectManager.addProjectLabel(dockerCommand, projectName);
+      }
       
       const result = await executeDockerCommand(dockerCommand);
       
@@ -1024,7 +1886,7 @@ server.registerResource(
   },
   async (uri) => {
     const helpContent = `
-Docker MCP Server - Comprehensive Natural Language Commands
+Docker MCP Server - Comprehensive Natural Language Commands (Enhanced Edition)
 
 === CONTAINER OPERATIONS ===
 Basic Container Management:
@@ -1047,12 +1909,61 @@ Container Inspection & Monitoring:
 - "stats for container api" → docker stats --no-stream api
 - "changes in container web" → docker diff web
 
-Container Creation (Advanced):
+Advanced Container Creation:
 - Use create_container tool for complex container setups with:
   - Port mappings: ['8080:80', '3000:3000']
   - Volume mounts: ['/host/data:/app/data']
   - Environment variables: {'NODE_ENV': 'production'}
   - Network connections, restart policies, working directories
+  - Health checks: {test: "curl -f http://localhost/health", interval: "30s"}
+  - Resource constraints: {memory: "512m", cpus: "0.5"}
+  - Security options: {user: "1000:1000", readOnly: true}
+
+=== PROJECT MANAGEMENT (NEW!) ===
+Plan+Apply Workflow:
+- Use docker_compose_advanced tool for project management
+- "plan project myapp with nginx and redis" → Creates deployment plan
+- "apply" → Executes the planned deployment
+- "status project myapp" → Shows current project status
+- "destroy project myapp" → Removes all project resources
+
+Project Commands:
+- plan: Create a deployment plan from natural language
+- apply: Execute the current plan
+- destroy: Remove all project resources
+- status: Show current project state
+
+Example Workflow:
+1. Plan: "plan project wordpress with wordpress and mysql database on port 9000"
+2. Review the generated plan
+3. Apply: "apply" to execute the plan
+4. Monitor: "status project wordpress" to check status
+
+=== REMOTE DOCKER SUPPORT (NEW!) ===
+Remote Connection:
+- Use docker_remote_connection tool
+- "connect to ssh://user@myserver.com" → Connect to remote Docker
+- "connect to tcp://remote-host:2376" → Connect via TCP
+- "disconnect" → Switch back to local Docker
+- "test connection" → Verify current connection
+- "status" → Show connection information
+
+=== ADVANCED MONITORING (NEW!) ===
+Enhanced Monitoring:
+- Use docker_monitoring_advanced tool
+- "live stats" → Real-time container statistics
+- "health nginx" → Detailed health check for container
+- "events since 2h" → Docker system events
+- "system info" → Comprehensive system information
+- "performance" → Overall performance overview
+
+=== BACKUP & MIGRATION (NEW!) ===
+Backup Operations:
+- Use docker_backup_migration tool
+- "backup container nginx" → Backup container and volumes
+- "export project myapp" → Export entire project
+- "list backups" → Show available backups
+- "cleanup backups older than 7 days" → Remove old backups
 
 === IMAGE OPERATIONS ===
 Image Management:
@@ -1069,12 +1980,6 @@ Image Building:
 - "build image myapp" → docker build -t myapp .
 - "build image from custom dockerfile" → docker build -f Dockerfile.prod -t myapp .
 - "create image webapp from current directory" → docker build -t webapp .
-
-Image Registry:
-- "search for nginx" / "find nginx images" → docker search nginx
-- "login to docker hub" → docker login
-- "logout from registry" → docker logout
-- Use docker_registry tool for advanced registry operations
 
 === VOLUME OPERATIONS ===
 Volume Management:
@@ -1119,71 +2024,84 @@ Compose Lifecycle:
 - "compose up service web" → docker-compose up -d web
 - "compose down" / "stop services" → docker-compose down
 - "compose down with volumes" → docker-compose down --volumes
-- "compose down with images" → docker-compose down --rmi all
-
-Compose Monitoring:
-- "compose logs" / "service logs" → docker-compose logs
-- "compose logs from web" → docker-compose logs web
-- "follow compose logs" → docker-compose logs -f
-- "compose status" / "compose ps" → docker-compose ps
-- "restart compose" / "restart services" → docker-compose restart
-- "restart service api" → docker-compose restart api
-
-Compose Building:
-- "compose build" / "rebuild services" → docker-compose build
-- "compose build service web" → docker-compose build web
-- "fresh compose build" / "clean rebuild" → docker-compose build --no-cache
-
-=== ADVANCED OPERATIONS ===
-File Operations:
-- "copy file.txt from container web" → docker cp web:/path/file.txt .
-- "copy data.json to container api" → docker cp data.json api:/tmp/
-
-Events & Troubleshooting:
-- "show docker events" → docker events --since 1h
-- "events for container web" → docker events --filter container=web
-- "differences in container api" → docker diff api
-
-Container Utilities:
-- "run ubuntu interactively" → docker run -it ubuntu bash
-- "run nginx detached on port 8080" → docker run -d -p 8080:80 nginx
-- "run redis with volume" → docker run -d -v redis-data:/data redis
-
-=== DIRECT COMMANDS ===
-You can also use direct Docker commands:
-- "docker ps -a --format table"
-- "docker run -it --rm alpine sh"
-- "docker build --no-cache -t myapp ."
-- "docker logs --since 1h --until 30m mycontainer"
 
 === TOOL CATEGORIES ===
+Core Tools:
 1. execute_docker_command - General NLP command execution
 2. manage_containers - Container lifecycle operations
 3. manage_images - Image operations and building
 4. manage_volumes - Volume management
 5. manage_networks - Network operations
-6. create_container - Advanced container creation
+6. create_container - Advanced container creation with health checks
 7. docker_registry - Registry and search operations
-8. docker_monitoring - Monitoring and troubleshooting
+8. docker_monitoring - Basic monitoring and troubleshooting
 9. docker_info - System information
-10. docker_compose - Docker Compose operations
+10. docker_compose - Traditional Docker Compose operations
+
+Enhanced Tools (NEW!):
+11. docker_compose_advanced - Plan+apply project management
+12. docker_remote_connection - Remote Docker host management
+13. docker_monitoring_advanced - Enhanced monitoring with health checks
+14. docker_backup_migration - Backup and migration operations
+
+=== ADVANCED FEATURES ===
+
+Project-Based Resource Management:
+- All resources created with projectName are automatically labeled
+- Resources can be managed as a group
+- Easy cleanup and migration of entire projects
+
+Natural Language Docker Compose:
+- Describe complex multi-service deployments in plain English
+- Plan+apply workflow like Terraform
+- Automatic dependency management
+- Resource labeling and grouping
+
+Remote Docker Support:
+- Connect to remote Docker hosts via SSH or TCP
+- Seamless switching between local and remote environments
+- Connection testing and status monitoring
+
+Enhanced Monitoring:
+- Real-time statistics and health checks
+- System events and performance monitoring
+- Comprehensive system information
+
+Backup and Migration:
+- Complete container and volume backups
+- Project-level export/import capabilities
+- Automated cleanup of old backups
 
 === EXAMPLES OF COMPLEX OPERATIONS ===
-Natural Language → Command Translation:
 
-"Show me all stopped containers that were created yesterday"
-→ docker ps -a --filter "status=exited" --filter "since=24h"
+Project Deployment:
+"Plan project ecommerce with nginx load balancer, node.js api server, redis cache, and postgres database"
+→ Creates a comprehensive deployment plan with all services
 
-"Remove all containers that have been stopped for more than a week"
-→ docker container prune --filter "until=168h"
+Remote Management:
+"Connect to ssh://admin@production.mycompany.com"
+"Plan project website with wordpress and mysql"
+"Apply the plan to deploy on remote server"
 
-"Start an nginx container on port 8080 with a custom volume"
-→ docker run -d -p 8080:80 -v /host/data:/usr/share/nginx/html nginx
+Backup Workflow:
+"Backup container production-api"
+"Export project ecommerce to /backups"
+"List all available backups"
 
-"Build my app image without using cache and tag it as version 2.0"
-→ docker build --no-cache -t myapp:2.0 .
+Health Monitoring:
+"Show health status for all containers"
+"Monitor system events since yesterday"
+"Display performance overview"
 
-The server understands context and can parse complex natural language requests!
+Advanced Container Creation:
+create_container with:
+- image: "nginx:alpine"
+- healthCheck: {test: "curl -f http://localhost/health", interval: "30s"}
+- resources: {memory: "512m", cpus: "0.5"}
+- security: {user: "nginx", readOnly: true}
+- projectName: "web-frontend"
+
+The Enhanced Docker MCP Server provides enterprise-level Docker management through natural language with advanced project management, remote capabilities, monitoring, and backup features!
 `;
 
     return {
