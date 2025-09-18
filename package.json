@@ -12,6 +12,7 @@
     "start": "node build/index.js",
     "dev": "tsc && node build/index.js",
     "test": "node test.mjs",
+    "test:advanced": "node test-advanced.mjs",
     "watch": "tsc --watch"
   },
   "keywords": [
