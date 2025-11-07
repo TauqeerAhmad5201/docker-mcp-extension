@@ -2,6 +2,10 @@
 
 A comprehensive Model Context Protocol (MCP) server that provides enterprise-level Docker functionality through natural language commands. This enhanced server includes advanced project management, remote Docker support, monitoring, backup capabilities, and much more.
 
+<a href="https://glama.ai/mcp/servers/@TauqeerAhmad5201/docker-mcp-extension">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@TauqeerAhmad5201/docker-mcp-extension/badge" alt="Docker Server MCP server" />
+</a>
+
 ## 🚀 Enterprise Features
 
 ### 🧠 Advanced Natural Language Processing
